@@ -1,0 +1,239 @@
+{
+  "name": "LinkedIn AI Job Matcher",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "schedule_trigger",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [0, 300]
+    },
+    {
+      "parameters": {
+        "operation": "list",
+        "returnAll": true
+      },
+      "id": "google_drive_list",
+      "name": "List Resume Files",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 1,
+      "position": [200, 300],
+      "credentials": {
+        "googleDriveOAuth2": {
+          "id": "ADD_YOUR_CREDENTIAL_ID",
+          "name": "Google Drive OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": "={{$json[\"id\"]}}"
+      },
+      "id": "download_resume",
+      "name": "Download Resume PDF",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 1,
+      "position": [400, 300],
+      "credentials": {
+        "googleDriveOAuth2": {
+          "id": "ADD_YOUR_CREDENTIAL_ID",
+          "name": "Google Drive OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "extract",
+        "binaryPropertyName": "data"
+      },
+      "id": "extract_pdf",
+      "name": "Extract Resume Text",
+      "type": "n8n-nodes-base.pdfExtract",
+      "typeVersion": 1,
+      "position": [600, 300]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "sheetId": "ADD_GOOGLE_SHEET_ID",
+        "range": "Filters!A2:F2"
+      },
+      "id": "read_job_filters",
+      "name": "Read Job Filters",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [800, 300],
+      "credentials": {
+        "googleSheetsOAuth2": {
+          "id": "ADD_YOUR_CREDENTIAL_ID",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "return items.map(item => {\n  const keyword = item.json.keyword;\n  const location = item.json.location;\n  const url = `https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(keyword)}&location=${encodeURIComponent(location)}`;\n  return { json: { searchUrl: url } };\n});"
+      },
+      "id": "create_search_url",
+      "name": "Create LinkedIn Search URL",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1000, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{$json[\"searchUrl\"]}}",
+        "responseFormat": "string"
+      },
+      "id": "fetch_jobs",
+      "name": "Fetch LinkedIn Jobs Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [1200, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "const html = $json.body;\nconst regex = /href=\"(\\/jobs\\/view\\/[^\\\"]+)\"/g;\nlet match;\nconst links = [];\nwhile ((match = regex.exec(html)) !== null) {\n  links.push(`https://www.linkedin.com${match[1]}`);\n}\nreturn links.map(link => ({ json: { jobUrl: link } }));"
+      },
+      "id": "extract_job_links",
+      "name": "Extract Job Links",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1400, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{$json[\"jobUrl\"]}}",
+        "responseFormat": "string"
+      },
+      "id": "fetch_job_page",
+      "name": "Fetch Job Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [1600, 300]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are an AI assistant that matches resumes with job descriptions."
+          },
+          {
+            "role": "user",
+            "content": "Resume:\\n{{$node[\"Extract Resume Text\"].json.text}}\\n\\nJob Description:\\n{{$json.body}}\\n\\nReturn JSON with fields: score (0-100), summary, cover_letter."
+          }
+        ]
+      },
+      "id": "ai_match",
+      "name": "AI Resume Match",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [1800, 300],
+      "credentials": {
+        "openAiApi": {
+          "id": "ADD_YOUR_CREDENTIAL_ID",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "sheetId": "ADD_GOOGLE_SHEET_ID",
+        "range": "Results!A:F",
+        "options": {}
+      },
+      "id": "store_results",
+      "name": "Store Job Result",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [2000, 300],
+      "credentials": {
+        "googleSheetsOAuth2": {
+          "id": "ADD_YOUR_CREDENTIAL_ID",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{$json.score}}",
+              "operation": "larger",
+              "value2": 50
+            }
+          ]
+        }
+      },
+      "id": "score_filter",
+      "name": "Score Filter",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [2200, 300]
+    },
+    {
+      "parameters": {
+        "chatId": "ADD_TELEGRAM_CHAT_ID",
+        "text": "🔥 New Job Match (Score: {{$json.score}})\n\n{{$json.summary}}"
+      },
+      "id": "telegram_alert",
+      "name": "Send Telegram Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [2400, 200],
+      "credentials": {
+        "telegramApi": {
+          "id": "ADD_YOUR_CREDENTIAL_ID",
+          "name": "Telegram Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [[{ "node": "List Resume Files", "type": "main", "index": 0 }]]
+    },
+    "List Resume Files": {
+      "main": [[{ "node": "Download Resume PDF", "type": "main", "index": 0 }]]
+    },
+    "Download Resume PDF": {
+      "main": [[{ "node": "Extract Resume Text", "type": "main", "index": 0 }]]
+    },
+    "Extract Resume Text": {
+      "main": [[{ "node": "Read Job Filters", "type": "main", "index": 0 }]]
+    },
+    "Read Job Filters": {
+      "main": [[{ "node": "Create LinkedIn Search URL", "type": "main", "index": 0 }]]
+    },
+    "Create LinkedIn Search URL": {
+      "main": [[{ "node": "Fetch LinkedIn Jobs Page", "type": "main", "index": 0 }]]
+    },
+    "Fetch LinkedIn Jobs Page": {
+      "main": [[{ "node": "Extract Job Links", "type": "main", "index": 0 }]]
+    },
+    "Extract Job Links": {
+      "main": [[{ "node": "Fetch Job Page", "type": "main", "index": 0 }]]
+    },
+    "Fetch Job Page": {
+      "main": [[{ "node": "AI Resume Match", "type": "main", "index": 0 }]]
+    },
+    "AI Resume Match": {
+      "main": [[{ "node": "Store Job Result", "type": "main", "index": 0 }]]
+    },
+    "Store Job Result": {
+      "main": [[{ "node": "Score Filter", "type": "main", "index": 0 }]]
+    },
+    "Score Filter": {
+      "main": [
+        [{ "node": "Send Telegram Alert", "type": "main", "index": 0 }],
+        []
+      ]
+    }
+  }
+}
