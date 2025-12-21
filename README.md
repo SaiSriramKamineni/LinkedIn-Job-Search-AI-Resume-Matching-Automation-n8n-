@@ -1,4 +1,6 @@
-# LinkedIn Job Search & AI Resume Matching Automation (n8n)
+ Job Search & AI Resume Matching Automation (n8n)
+# LinkedIn<img width="1877" height="920" alt="Screenshot 2025-12-22 014544" src="https://github.com/user-attachments/assets/ab417731-b9a1-4d85-8015-1330e8db7bd9" />
+
 
 ## Overview
 
