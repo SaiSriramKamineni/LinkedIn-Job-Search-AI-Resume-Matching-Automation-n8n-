@@ -1,6 +1,8 @@
  Job Search & AI Resume Matching Automation (n8n)
 
- <img width="1641" height="647" alt="image" src="https://github.com/user-attachments/assets/b2cbaaf9-5c41-485d-9808-32236772c41a" />
+
+
+
 
 
 ## Overview
